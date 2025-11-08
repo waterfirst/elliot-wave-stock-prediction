@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 
-from stock_data import StockDataFetcher, get_available_tickers, get_ticker_name_map
+from stock_data import StockDataFetcher, get_available_tickers
 from elliott_wave import ElliottWaveAnalyzer
 from predictor import StockPredictor
 
@@ -243,7 +243,6 @@ def main():
 
         # 티커 선택
         available_tickers = get_available_tickers()
-        ticker_name_map = get_ticker_name_map()
 
         # 사용자 정의 티커 입력 옵션
         use_custom = st.checkbox("사용자 정의 티커 입력")
@@ -251,31 +250,11 @@ def main():
         if use_custom:
             ticker = st.text_input("티커 심볼 입력", value="NVDA").upper()
         else:
-            # 카테고리 선택
-            category = st.selectbox(
-                "카테고리 선택",
-                list(available_tickers.keys()),
-                index=0
-            )
-
-            # 선택된 카테고리의 티커 목록
-            tickers_in_category = available_tickers[category]
-
-            # 티커를 이름과 함께 표시
-            ticker_options = [
-                f"{ticker_name_map.get(t, t)} ({t})"
-                for t in tickers_in_category
-            ]
-
-            # 티커 선택
-            selected_option = st.selectbox(
+            ticker = st.selectbox(
                 "주식 선택",
-                ticker_options,
+                available_tickers,
                 index=0
             )
-
-            # 괄호 안의 티커 심볼 추출
-            ticker = selected_option.split('(')[-1].strip(')')
 
         # 데이터 기간 선택
         period = st.selectbox(
