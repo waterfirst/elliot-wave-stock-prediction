@@ -47,6 +47,18 @@ streamlit run app.py
 
 브라우저가 자동으로 열리며 `http://localhost:8501`에서 애플리케이션을 확인할 수 있습니다.
 
+### ☁️ Streamlit Cloud 배포
+
+**온라인에서 바로 사용하기:**
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+
+배포 방법은 [DEPLOYMENT.md](DEPLOYMENT.md) 문서를 참고하세요.
+
+**배포 시 OAuth 에러 해결:**
+- GitHub 조직 설정에서 Streamlit OAuth 앱 승인 필요
+- 자세한 내용은 [DEPLOYMENT.md](DEPLOYMENT.md) 참고
+
 ## 📚 사용 방법
 
 1. **주식 선택**: 사이드바에서 분석할 주식 선택
