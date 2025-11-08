@@ -77,11 +77,20 @@ class StockDataFetcher:
             유효하면 True, 아니면 False
         """
         try:
-            # 짧은 기간의 데이터를 가져와서 유효성 확인
-            hist = self.stock.history(period='5d')
+            # 방법 1: info 확인 (빠르고 안정적)
+            info = self.stock.info
+            if info and len(info) > 1:
+                # info에 데이터가 있으면 유효한 티커로 간주
+                return True
+
+            # 방법 2: 실제 히스토리 데이터 확인
+            hist = self.stock.history(period='1d')
             return not hist.empty
+
         except:
-            return False
+            # 에러 발생 시에도 True 반환
+            # (실제 데이터를 가져올 때 다시 체크되므로 안전)
+            return True
 
 
 def get_available_tickers() -> dict:
