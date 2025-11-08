@@ -7,6 +7,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+import time
 
 
 class StockDataFetcher:
@@ -18,11 +19,13 @@ class StockDataFetcher:
             ticker: 주식 티커 심볼 (예: 'NVDA', 'AAPL', 'TSLA')
         """
         self.ticker = ticker.upper()
-        self.stock = yf.Ticker(self.ticker)
+        # Ticker 객체는 info 조회용으로만 사용
+        self.stock = None
 
     def get_historical_data(self, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
         """
         과거 주가 데이터를 가져옵니다.
+        yf.download() 함수를 사용하여 안정적으로 데이터를 가져옵니다.
 
         Args:
             period: 데이터 기간 ('1mo', '3mo', '6mo', '1y', '2y', '5y', 'max')
@@ -31,18 +34,57 @@ class StockDataFetcher:
         Returns:
             주가 데이터가 담긴 DataFrame
         """
-        try:
-            df = self.stock.history(period=period, interval=interval)
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-            if df.empty:
-                raise ValueError(f"'{self.ticker}' 티커에 대한 데이터를 찾을 수 없습니다.")
+        for attempt in range(max_retries):
+            try:
+                # yf.download() 사용 - 더 안정적
+                df = yf.download(
+                    tickers=self.ticker,
+                    period=period,
+                    interval=interval,
+                    progress=False,  # 진행바 비활성화
+                    show_errors=False  # 에러 메시지 비활성화
+                )
 
-            # 인덱스를 날짜 컬럼으로 변환
-            df.reset_index(inplace=True)
+                if not df.empty:
+                    # 인덱스를 날짜 컬럼으로 변환
+                    df.reset_index(inplace=True)
 
-            return df
-        except Exception as e:
-            raise Exception(f"데이터 수집 중 오류 발생: {str(e)}")
+                    # 컬럼명 정리 (MultiIndex인 경우)
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+
+                    return df
+
+                # 데이터가 비어있는 경우
+                if attempt < max_retries - 1:
+                    # 재시도 전 대기
+                    time.sleep(retry_delay)
+                    # 다음 시도에서는 더 짧은 기간으로 시도
+                    if period == '1y':
+                        period = '6mo'
+                    elif period == '2y':
+                        period = '1y'
+                    elif period == '5y':
+                        period = '2y'
+                    continue
+                else:
+                    raise ValueError(f"'{self.ticker}' 티커에 대한 데이터를 찾을 수 없습니다.")
+
+            except ValueError as ve:
+                # ValueError는 그대로 전파
+                raise ve
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    # 재시도
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise Exception(f"데이터 수집 중 오류 발생: {str(e)}")
+
+        raise Exception(f"'{self.ticker}' 티커에 대한 데이터를 가져올 수 없습니다.")
 
     def get_stock_info(self) -> dict:
         """
@@ -51,41 +93,70 @@ class StockDataFetcher:
         Returns:
             주식 정보 딕셔너리
         """
+        current_price = 'N/A'
+        name = self.ticker
+        sector = 'N/A'
+        industry = 'N/A'
+        market_cap = 'N/A'
+
         try:
-            info = self.stock.info
-            return {
-                'name': info.get('longName', self.ticker),
-                'sector': info.get('sector', 'N/A'),
-                'industry': info.get('industry', 'N/A'),
-                'market_cap': info.get('marketCap', 'N/A'),
-                'current_price': info.get('currentPrice', 'N/A'),
-            }
-        except Exception as e:
-            return {
-                'name': self.ticker,
-                'sector': 'N/A',
-                'industry': 'N/A',
-                'market_cap': 'N/A',
-                'current_price': 'N/A',
-            }
+            # Ticker 객체 사용 (info 조회용)
+            ticker_obj = yf.Ticker(self.ticker)
+            info = ticker_obj.info
+
+            # 기본 정보 추출
+            name = info.get('longName', info.get('shortName', self.ticker))
+            sector = info.get('sector', 'N/A')
+            industry = info.get('industry', 'N/A')
+            market_cap = info.get('marketCap', 'N/A')
+
+            # 현재 가격 추출
+            if 'currentPrice' in info and info['currentPrice']:
+                current_price = info['currentPrice']
+            elif 'regularMarketPrice' in info and info['regularMarketPrice']:
+                current_price = info['regularMarketPrice']
+        except:
+            pass
+
+        # 현재 가격을 못 가져온 경우 yf.download로 시도
+        if current_price == 'N/A':
+            try:
+                df = yf.download(
+                    tickers=self.ticker,
+                    period='1d',
+                    progress=False,
+                    show_errors=False
+                )
+                if not df.empty:
+                    current_price = float(df['Close'].iloc[-1])
+            except:
+                pass
+
+        return {
+            'name': name,
+            'sector': sector,
+            'industry': industry,
+            'market_cap': market_cap,
+            'current_price': current_price,
+        }
 
     def validate_ticker(self) -> bool:
         """
         티커 심볼이 유효한지 검증합니다.
+        yf.download()로 실제 데이터 존재 여부 확인.
 
         Returns:
             유효하면 True, 아니면 False
         """
         try:
-            # 방법 1: info 확인 (빠르고 안정적)
-            info = self.stock.info
-            if info and len(info) > 1:
-                # info에 데이터가 있으면 유효한 티커로 간주
-                return True
-
-            # 방법 2: 실제 히스토리 데이터 확인
-            hist = self.stock.history(period='1d')
-            return not hist.empty
+            # yf.download로 짧은 기간 데이터 확인
+            df = yf.download(
+                tickers=self.ticker,
+                period='5d',
+                progress=False,
+                show_errors=False
+            )
+            return not df.empty
 
         except:
             # 에러 발생 시에도 True 반환
