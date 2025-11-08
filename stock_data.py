@@ -77,33 +77,108 @@ class StockDataFetcher:
             유효하면 True, 아니면 False
         """
         try:
-            info = self.stock.info
-            return 'regularMarketPrice' in info or 'currentPrice' in info
+            # 짧은 기간의 데이터를 가져와서 유효성 확인
+            hist = self.stock.history(period='5d')
+            return not hist.empty
         except:
             return False
 
 
-def get_available_tickers() -> list:
+def get_available_tickers() -> dict:
     """
-    자주 사용되는 주요 기술주 티커 목록을 반환합니다.
+    자주 사용되는 주요 주식 티커 목록을 반환합니다.
 
     Returns:
-        티커 심볼 리스트
+        지역별 티커 심볼 딕셔너리
     """
-    return [
-        'NVDA',   # Nvidia
-        'AAPL',   # Apple
-        'MSFT',   # Microsoft
-        'GOOGL',  # Google
-        'AMZN',   # Amazon
-        'TSLA',   # Tesla
-        'META',   # Meta
-        'AMD',    # AMD
-        'INTC',   # Intel
-        'NFLX',   # Netflix
-        'CSCO',   # Cisco
-        'ADBE',   # Adobe
-        'CRM',    # Salesforce
-        'ORCL',   # Oracle
-        'IBM',    # IBM
-    ]
+    return {
+        '🇺🇸 미국 기술주': [
+            'NVDA',   # Nvidia
+            'AAPL',   # Apple
+            'MSFT',   # Microsoft
+            'GOOGL',  # Google (Alphabet Class A)
+            'AMZN',   # Amazon
+            'TSLA',   # Tesla
+            'META',   # Meta (Facebook)
+            'AMD',    # AMD
+            'INTC',   # Intel
+            'NFLX',   # Netflix
+        ],
+        '🇺🇸 미국 금융/기타': [
+            'JPM',    # JPMorgan Chase
+            'V',      # Visa
+            'MA',     # Mastercard
+            'BAC',    # Bank of America
+            'WMT',    # Walmart
+            'JNJ',    # Johnson & Johnson
+            'PG',     # Procter & Gamble
+            'DIS',    # Disney
+        ],
+        '🇰🇷 한국 주식': [
+            '005930.KS',  # 삼성전자
+            '000660.KS',  # SK하이닉스
+            '035420.KS',  # 네이버
+            '035720.KS',  # 카카오
+            '005380.KS',  # 현대차
+            '066570.KS',  # LG전자
+            '051910.KS',  # LG화학
+            '006400.KS',  # 삼성SDI
+            '028260.KS',  # 삼성물산
+            '012330.KS',  # 현대모비스
+        ],
+        '🇨🇳 중국 주식': [
+            'BABA',   # Alibaba
+            'BIDU',   # Baidu
+            'JD',     # JD.com
+            'PDD',    # Pinduoduo
+            'NIO',    # NIO
+        ],
+    }
+
+
+def get_ticker_name_map() -> dict:
+    """
+    티커 심볼과 회사명 매핑을 반환합니다.
+
+    Returns:
+        티커: 회사명 딕셔너리
+    """
+    return {
+        # 미국 기술주
+        'NVDA': 'Nvidia',
+        'AAPL': 'Apple',
+        'MSFT': 'Microsoft',
+        'GOOGL': 'Google (Alphabet)',
+        'AMZN': 'Amazon',
+        'TSLA': 'Tesla',
+        'META': 'Meta (Facebook)',
+        'AMD': 'AMD',
+        'INTC': 'Intel',
+        'NFLX': 'Netflix',
+        # 미국 금융/기타
+        'JPM': 'JPMorgan Chase',
+        'V': 'Visa',
+        'MA': 'Mastercard',
+        'BAC': 'Bank of America',
+        'WMT': 'Walmart',
+        'JNJ': 'Johnson & Johnson',
+        'PG': 'Procter & Gamble',
+        'DIS': 'Disney',
+        # 한국 주식
+        '005930.KS': '삼성전자',
+        '000660.KS': 'SK하이닉스',
+        '035420.KS': '네이버',
+        '035720.KS': '카카오',
+        '005380.KS': '현대차',
+        '066570.KS': 'LG전자',
+        '051910.KS': 'LG화학',
+        '006400.KS': '삼성SDI',
+        '028260.KS': '삼성물산',
+        '012330.KS': '현대모비스',
+        # 중국 주식
+        'BABA': 'Alibaba',
+        'BIDU': 'Baidu',
+        'JD': 'JD.com',
+        'PDD': 'Pinduoduo',
+        'NIO': 'NIO',
+    }
