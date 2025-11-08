@@ -7,6 +7,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+import time
 
 
 class StockDataFetcher:
@@ -20,66 +21,150 @@ class StockDataFetcher:
         self.ticker = ticker.upper()
         self.stock = yf.Ticker(self.ticker)
 
-    def get_historical_data(self, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
+    def get_historical_data(self, period: str = '1y', interval: str = '1d', retry: int = 3) -> pd.DataFrame:
         """
         과거 주가 데이터를 가져옵니다.
 
         Args:
             period: 데이터 기간 ('1mo', '3mo', '6mo', '1y', '2y', '5y', 'max')
             interval: 데이터 간격 ('1d', '1h', '1wk', '1mo')
+            retry: 재시도 횟수 (기본값: 3)
 
         Returns:
             주가 데이터가 담긴 DataFrame
         """
-        try:
-            df = self.stock.history(period=period, interval=interval)
+        last_error = None
+        for attempt in range(retry):
+            try:
+                # yf.download를 사용하여 더 안정적으로 데이터 가져오기
+                df = yf.download(
+                    self.ticker,
+                    period=period,
+                    interval=interval,
+                    progress=False,
+                    timeout=10
+                )
 
-            if df.empty:
-                raise ValueError(f"'{self.ticker}' 티커에 대한 데이터를 찾을 수 없습니다.")
+                # MultiIndex 처리 (yf.download는 여러 티커를 다운로드할 때 MultiIndex 반환)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)
 
-            # 인덱스를 날짜 컬럼으로 변환
-            df.reset_index(inplace=True)
+                if df.empty:
+                    # Ticker 객체로 재시도
+                    df = self.stock.history(period=period, interval=interval, timeout=10)
 
-            return df
-        except Exception as e:
-            raise Exception(f"데이터 수집 중 오류 발생: {str(e)}")
+                if df.empty:
+                    raise ValueError(f"'{self.ticker}' 티커에 대한 데이터를 찾을 수 없습니다.")
+
+                # 인덱스를 날짜 컬럼으로 변환
+                if isinstance(df.index, pd.DatetimeIndex):
+                    df.reset_index(inplace=True)
+                elif 'Date' not in df.columns:
+                    df.reset_index(inplace=True)
+
+                return df
+            except Exception as e:
+                last_error = e
+                if attempt < retry - 1:
+                    time.sleep(1)  # 재시도 전 대기
+                else:
+                    raise Exception(f"데이터 수집 중 오류 발생 (재시도 {retry}회 실패): {str(e)}")
+        
+        raise Exception(f"데이터 수집 중 오류 발생: {str(last_error)}")
 
     def get_stock_info(self) -> dict:
         """
         주식 기본 정보를 가져옵니다.
+        Streamlit Cloud 환경에서도 안정적으로 작동하도록 개선되었습니다.
 
         Returns:
             주식 정보 딕셔너리
         """
         try:
+            # info 속성 시도
             info = self.stock.info
+            current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+            
+            # current_price가 없으면 최근 데이터에서 가져오기
+            if not current_price:
+                try:
+                    df = yf.download(self.ticker, period='1d', progress=False, timeout=10)
+                    # MultiIndex 처리
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.droplevel(1)
+                    if not df.empty and 'Close' in df.columns:
+                        current_price = float(df['Close'].iloc[-1])
+                except:
+                    pass
+            
             return {
-                'name': info.get('longName', self.ticker),
+                'name': info.get('longName') or info.get('shortName', self.ticker),
                 'sector': info.get('sector', 'N/A'),
                 'industry': info.get('industry', 'N/A'),
                 'market_cap': info.get('marketCap', 'N/A'),
-                'current_price': info.get('currentPrice', 'N/A'),
+                'current_price': current_price if current_price else 'N/A',
             }
         except Exception as e:
+            # info 실패 시 최소한의 정보라도 가져오기
+            try:
+                df = yf.download(self.ticker, period='1d', progress=False, timeout=10)
+                # MultiIndex 처리
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)
+                current_price = None
+                if not df.empty and 'Close' in df.columns:
+                    current_price = float(df['Close'].iloc[-1])
+            except:
+                current_price = None
+            
             return {
                 'name': self.ticker,
                 'sector': 'N/A',
                 'industry': 'N/A',
                 'market_cap': 'N/A',
-                'current_price': 'N/A',
+                'current_price': current_price if current_price else 'N/A',
             }
 
     def validate_ticker(self) -> bool:
         """
         티커 심볼이 유효한지 검증합니다.
+        Streamlit Cloud 환경에서도 안정적으로 작동하도록 history() 메서드를 사용합니다.
 
         Returns:
             유효하면 True, 아니면 False
         """
         try:
-            info = self.stock.info
-            return 'regularMarketPrice' in info or 'currentPrice' in info
-        except:
+            # yf.download를 사용하여 실제로 데이터를 가져올 수 있는지 확인
+            # 이 방법이 info 속성보다 더 안정적입니다
+            df = yf.download(
+                self.ticker,
+                period='5d',  # 최소 기간으로 빠르게 검증
+                interval='1d',
+                progress=False,
+                timeout=10
+            )
+            
+            # MultiIndex 처리 (yf.download는 여러 티커를 다운로드할 때 MultiIndex 반환)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
+            
+            # 데이터가 비어있지 않고 유효한 컬럼이 있는지 확인
+            if df.empty:
+                # Ticker 객체로 재시도
+                try:
+                    df = self.stock.history(period='5d', timeout=10)
+                except:
+                    return False
+            
+            # 데이터가 있고 유효한 컬럼이 있는지 확인
+            if df.empty:
+                return False
+            
+            # Close 컬럼이 있거나 다른 가격 관련 컬럼이 있는지 확인
+            has_price_column = 'Close' in df.columns or 'Open' in df.columns or 'High' in df.columns or 'Low' in df.columns
+            return has_price_column and len(df) > 0
+        except Exception as e:
+            # 에러 발생 시 False 반환
             return False
 
 
