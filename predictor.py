@@ -246,3 +246,77 @@ class StockPredictor:
         }
 
         return summary
+
+    def backtest_predictions(self, days_back: int = 60, test_period: int = 5) -> Dict:
+        """
+        과거 데이터를 바탕으로 예측 정확도를 테스트합니다.
+
+        Args:
+            days_back: 며칠 전부터 테스트할지 (테스트 범위)
+            test_period: 예측할 미래 기간 (예: 5일 후 예측 테스트)
+
+        Returns:
+            백테스팅 결과 딕셔너리
+        """
+        results = []
+        
+        # 테스트 가능한 데이터 범위 확인
+        if len(self.df) < days_back + test_period + 50: # 최소 데이터 요구량
+            return {'status': 'insufficient_data'}
+
+        # 과거 시점으로 돌아가서 예측 수행
+        # 최근 데이터는 정답지(Actual)로 사용해야 하므로, days_back 이전부터 시작
+        start_idx = len(self.df) - days_back - test_period
+        end_idx = len(self.df) - test_period
+
+        for i in range(start_idx, end_idx, 2): # 2일 간격으로 테스트 (성능 최적화)
+            # 과거 시점의 데이터로 슬라이싱
+            past_df = self.df.iloc[:i+1].copy()
+            
+            # 해당 시점의 실제 미래 가격 (정답)
+            actual_future_price = self.df['Close'].iloc[i + test_period]
+            actual_current_price = self.df['Close'].iloc[i]
+            
+            # 예측기 생성 및 예측
+            past_predictor = StockPredictor(past_df)
+            prediction = past_predictor.predict_price(days=test_period)
+            
+            if prediction['status'] == 'success':
+                predicted_price = prediction['predicted_price']
+                
+                # 방향성 정확도 확인
+                predicted_direction = 1 if predicted_price > actual_current_price else -1
+                actual_direction = 1 if actual_future_price > actual_current_price else -1
+                is_direction_correct = predicted_direction == actual_direction
+                
+                # 오차율 계산
+                error_pct = abs(predicted_price - actual_future_price) / actual_future_price * 100
+                
+                results.append({
+                    'date': past_df['Date'].iloc[-1],
+                    'actual_price': actual_future_price,
+                    'predicted_price': predicted_price,
+                    'direction_correct': is_direction_correct,
+                    'error_pct': error_pct,
+                    'confidence': prediction['confidence']
+                })
+
+        if not results:
+            return {'status': 'no_results'}
+
+        # 종합 메트릭 계산
+        df_results = pd.DataFrame(results)
+        
+        accuracy_metrics = {
+            'directional_accuracy': df_results['direction_correct'].mean() * 100,
+            'mape': df_results['error_pct'].mean(), # Mean Absolute Percentage Error
+            'rmse': np.sqrt(np.mean((df_results['predicted_price'] - df_results['actual_price'])**2)),
+            'avg_confidence': df_results['confidence'].mean(),
+            'total_tests': len(results)
+        }
+
+        return {
+            'status': 'success',
+            'metrics': accuracy_metrics,
+            'detailed_results': results
+        }
