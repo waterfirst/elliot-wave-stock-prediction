@@ -128,41 +128,52 @@ class StockDataFetcher:
     def validate_ticker(self) -> bool:
         """
         티커 심볼이 유효한지 검증합니다.
-        Streamlit Cloud 환경에서도 안정적으로 작동하도록 history() 메서드를 사용합니다.
+        Streamlit Cloud 환경에서도 안정적으로 작동하도록 history() 메서드를 우선 사용합니다.
 
         Returns:
             유효하면 True, 아니면 False
         """
         try:
-            # yf.download를 사용하여 실제로 데이터를 가져올 수 있는지 확인
-            # 이 방법이 info 속성보다 더 안정적입니다
-            df = yf.download(
-                self.ticker,
-                period='5d',  # 최소 기간으로 빠르게 검증
-                interval='1d',
-                progress=False,
-                timeout=10
-            )
+            # 1. history() 메서드 시도 (가장 안정적)
+            try:
+                df = self.stock.history(period='5d', timeout=10)
+                if not df.empty and len(df) > 0:
+                    return True
+            except:
+                pass
+
+            # 2. yf.download() 시도 (백업)
+            try:
+                df = yf.download(
+                    self.ticker,
+                    period='5d',
+                    interval='1d',
+                    progress=False,
+                    timeout=10
+                )
+                
+                # MultiIndex 처리
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)
+                    
+                if not df.empty and len(df) > 0:
+                    # 가격 컬럼 확인
+                    if 'Close' in df.columns or 'Open' in df.columns:
+                        return True
+            except:
+                pass
+
+            # 3. info 속성 확인 (마지막 수단)
+            # 데이터 다운로드가 실패해도 info가 있으면 유효한 티커일 수 있음
+            try:
+                info = self.stock.info
+                if info and ('symbol' in info or 'regularMarketPrice' in info):
+                    return True
+            except:
+                pass
             
-            # MultiIndex 처리 (yf.download는 여러 티커를 다운로드할 때 MultiIndex 반환)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.droplevel(1)
+            return False
             
-            # 데이터가 비어있지 않고 유효한 컬럼이 있는지 확인
-            if df.empty:
-                # Ticker 객체로 재시도
-                try:
-                    df = self.stock.history(period='5d', timeout=10)
-                except:
-                    return False
-            
-            # 데이터가 있고 유효한 컬럼이 있는지 확인
-            if df.empty:
-                return False
-            
-            # Close 컬럼이 있거나 다른 가격 관련 컬럼이 있는지 확인
-            has_price_column = 'Close' in df.columns or 'Open' in df.columns or 'High' in df.columns or 'Low' in df.columns
-            return has_price_column and len(df) > 0
         except Exception as e:
             # 에러 발생 시 False 반환
             return False
